@@ -112,6 +112,12 @@ class DeskApi {
     return j['state'] as String;
   }
 
+  /// A one-time link that signs a web view into the Desk (since 1.1-rc9).
+  Future<Uri> session() async {
+    final j = await post('/api/app/session', <String, Object?>{}) as Map;
+    return base.resolve(j['url'] as String);
+  }
+
   Future<Map<String, Object?>> overview() async => (await get('/api/overview') as Map).cast<String, Object?>();
 }
 

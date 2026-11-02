@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../app/model.dart';
+import 'desk_screen.dart';
 import 'l10n.dart';
 import 'theme.dart';
 
@@ -104,6 +105,23 @@ class _NasScreenState extends State<NasScreen> {
                 ),
               ),
             ),
+          if (info != null && canShowDesk) ...[
+            const SizedBox(height: 12),
+            GradButton(
+              label: t.openDesk,
+              icon: Icons.open_in_browser,
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => DeskScreen(model: widget.model, nas: v),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(4, 8, 4, 0),
+              child: Text(t.openDeskHelp, style: const TextStyle(color: Ut.fg3, fontSize: 13)),
+            ),
+          ],
           if (info != null) ...[
             SectionTitle(v.title),
             _card([
@@ -230,6 +248,20 @@ class PhoneScreen extends StatelessWidget {
                 '${m.kind}${m.role == 'admin' ? ' · admin' : ''}${m.node == model.me?.nodeId ? ' · ←' : ''}',
               ),
           ]),
+          if (model.tunnel.available) ...[
+            SectionTitle(t.tunnelStarts),
+            FutureBuilder<List<String>>(
+              future: model.tunnel.starts(),
+              builder: (context, snap) => _card([
+                for (final line in snap.data ?? const <String>[])
+                  _Row(line.substring(0, line.indexOf(' ')), line.substring(line.indexOf(' ') + 1)),
+              ]),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(4, 8, 4, 0),
+              child: Text(t.tunnelStartsHelp, style: const TextStyle(color: Ut.fg3, fontSize: 13)),
+            ),
+          ],
           const SizedBox(height: 28),
           OutlinedButton(
             onPressed: () => _forget(context),

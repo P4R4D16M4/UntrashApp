@@ -155,16 +155,14 @@ class AppModel extends ChangeNotifier {
         notifyListeners();
         return;
       }
-      final maxEps = mesh!.memberList().fold<int>(1, (a, m) => m.endpoints.length > a ? m.endpoints.length : a);
-      for (var attempt = 0; attempt < maxEps; attempt++) {
-        final peers = await tunnelPeers(mesh!, me!, attempt);
-        try {
-          await tunnel.up(tunnelConfig(me!, ownAddress!, peers));
-        } catch (e) {
-          lastError = '$e';
-          break;
-        }
-        if (await _handshake(peers)) break;
+      final peers = await tunnelPeers(mesh!, me!);
+      try {
+        await tunnel.up(tunnelConfig(me!, ownAddress!, peers), {for (final p in peers) p.wg: p.endpoints});
+        // the native side tries each endpoint for 8 s; wait for a first handshake
+        final maxEps = peers.fold<int>(1, (a, p) => p.endpoints.length > a ? p.endpoints.length : a);
+        await _handshake(peers, seconds: 8 * maxEps + 4);
+      } catch (e) {
+        lastError = '$e';
       }
     }
     await refresh(full: true);

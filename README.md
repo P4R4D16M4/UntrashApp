@@ -33,7 +33,7 @@ flutter test
   factors, wrong number denies, restart keeps the pairing.
 
 The integration tests need the UntrashOS checkout (default
-`~/Projects/UntrashOS-v1.2/untrashos`, or `UNTRASHOS_DIR`), `python3` and
+`~/Projects/UntrashOS-v1.1/untrashos`, or `UNTRASHOS_DIR`), `python3` and
 `gcc`. Without it they are skipped.
 
 ## Development on the desktop (no tunnel)

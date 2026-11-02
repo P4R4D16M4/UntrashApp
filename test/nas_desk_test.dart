@@ -5,12 +5,13 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
 import 'package:untrash_app/protocol/desk_api.dart';
 import 'package:untrash_app/protocol/identity.dart';
 import 'package:untrash_app/protocol/mesh.dart';
 
 final untrashOs =
-    Platform.environment['UNTRASHOS_DIR'] ?? '${Platform.environment['HOME']}/Projects/UntrashOS-v1.2/untrashos';
+    Platform.environment['UNTRASHOS_DIR'] ?? '${Platform.environment['HOME']}/Projects/UntrashOS-v1.1/untrashos';
 
 class Fixture {
   Fixture._(this.p, this.lines, this.hello);
@@ -66,6 +67,18 @@ void main() {
           throwsA(isA<DeskError>().having((e) => e.status, 'status', 403)),
           reason: "alice's app has alice's rights, no admin endpoints",
         );
+
+        // the Desk in the app: the one-time link becomes a Desk session for alice
+        final link = await desk.session();
+        final enter = http.Request('GET', link)..followRedirects = false;
+        final er = await http.Client().send(enter);
+        expect(er.statusCode, 302);
+        final cookie = (er.headers['set-cookie'] ?? '').split(';').first;
+        expect(cookie, startsWith('utsess='));
+        final meRes = await http.get(desk.base.resolve('/api/me'), headers: {'Cookie': cookie});
+        expect((jsonDecode(meRes.body) as Map)['user'], 'alice');
+        final again = await http.Client().send(http.Request('GET', link)..followRedirects = false);
+        expect(again.statusCode, 403, reason: 'the link works once');
 
         // a stranger's key is refused
         final other = DeskApi(desk.base, await Identity.generate());

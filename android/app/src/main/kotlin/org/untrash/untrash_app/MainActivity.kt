@@ -13,6 +13,8 @@ class MainActivity : FlutterActivity() {
         val t = MeshTunnel(this)
         tunnel = t
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "org.untrash.app/tunnel").setMethodCallHandler(t)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "org.untrash.app/download")
+            .setMethodCallHandler(Downloads(this))
     }
 
     @Deprecated("Deprecated in Java")

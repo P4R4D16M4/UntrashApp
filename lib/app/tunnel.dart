@@ -9,10 +9,13 @@ import '../protocol/identity.dart';
 import '../protocol/mesh.dart';
 
 /// One NAS peer of the tunnel with the endpoint tried right now.
+/// One NAS peer of the tunnel with its endpoints in the order to try them
+/// (the native side moves on when there is no handshake).
 class TunnelPeer {
-  TunnelPeer(this.wg, this.address, this.endpoint);
+  TunnelPeer(this.wg, this.address, this.endpoints);
   final String wg, address;
-  final String? endpoint;
+  final List<String> endpoints;
+  String? get endpoint => endpoints.isEmpty ? null : endpoints.first;
 }
 
 /// wg-quick text for the app's interface: its own address, one peer per
@@ -73,11 +76,16 @@ abstract class MeshTunnel {
 
   /// Asks for the VPN permission once; true when the tunnel may start.
   Future<bool> prepare();
-  Future<void> up(String config);
+
+  /// [endpoints]: per peer public key, every endpoint in the order to try.
+  Future<void> up(String config, Map<String, List<String>> endpoints);
   Future<void> down();
 
   /// Last handshake per peer public key (ms since epoch, 0 = none).
   Future<Map<String, int>> handshakes();
+
+  /// The last starts of the tunnel, newest first: "HH:MM:SS reason".
+  Future<List<String>> starts();
 }
 
 class AndroidTunnel implements MeshTunnel {
@@ -87,7 +95,8 @@ class AndroidTunnel implements MeshTunnel {
   @override
   Future<bool> prepare() async => (await _ch.invokeMethod<bool>('prepare')) ?? false;
   @override
-  Future<void> up(String config) => _ch.invokeMethod('up', {'config': config});
+  Future<void> up(String config, Map<String, List<String>> endpoints) =>
+      _ch.invokeMethod('up', {'config': config, 'endpoints': endpoints});
   @override
   Future<void> down() => _ch.invokeMethod('down');
   @override
@@ -95,6 +104,9 @@ class AndroidTunnel implements MeshTunnel {
     final m = await _ch.invokeMapMethod<String, int>('handshakes');
     return m ?? const {};
   }
+
+  @override
+  Future<List<String>> starts() async => (await _ch.invokeListMethod<String>('starts')) ?? const [];
 }
 
 /// No tunnel: requests go straight to the addresses (development against
@@ -105,24 +117,23 @@ class NoTunnel implements MeshTunnel {
   @override
   Future<bool> prepare() async => true;
   @override
-  Future<void> up(String config) async {}
+  Future<void> up(String config, Map<String, List<String>> endpoints) async {}
   @override
   Future<void> down() async {}
   @override
   Future<Map<String, int>> handshakes() async => const {};
+  @override
+  Future<List<String>> starts() async => const [];
 }
 
 MeshTunnel platformTunnel() => Platform.isAndroid ? AndroidTunnel() : NoTunnel();
 
-/// Peers for [st] with the endpoint index [attempt] of each NAS member.
-Future<List<TunnelPeer>> tunnelPeers(MeshState st, Identity me, int attempt) async {
+/// Peers for [st]: every NAS member with its endpoints, LAN ones first.
+Future<List<TunnelPeer>> tunnelPeers(MeshState st, Identity me) async {
   final mine = await localAddresses();
   return [
     for (final m in st.memberList())
       if (m.node != me.nodeId && m.isNas && m.wg.isNotEmpty)
-        () {
-          final eps = orderEndpoints(m.endpoints, mine);
-          return TunnelPeer(m.wg, m.address, eps.isEmpty ? null : eps[attempt % eps.length]);
-        }(),
+        TunnelPeer(m.wg, m.address, orderEndpoints(m.endpoints, mine)),
   ];
 }

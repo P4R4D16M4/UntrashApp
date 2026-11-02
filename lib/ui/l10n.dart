@@ -94,6 +94,25 @@ class T {
   String get adminOnly => _('Details are shown for admins.', 'Details sehen nur Admins.');
   String free(String a, String b) => _('$a of $b free', '$a von $b frei');
 
+  String get openDesk => _('Open the Desk', 'Desk öffnen');
+  String get openDeskHelp => _(
+    'Files, shares, users, media, settings: the whole Desk of this NAS, over the encrypted tunnel.',
+    'Dateien, Freigaben, Benutzer, Medien, Einstellungen: der ganze Desk dieses NAS, über den verschlüsselten Tunnel.',
+  );
+  String get reload => _('Reload', 'Neu laden');
+  String get deskFailed => _('The Desk could not be opened', 'Der Desk ließ sich nicht öffnen');
+  String get deskNeedsUpdate => _(
+    'This NAS needs UntrashOS 1.1-rc9 or newer for the Desk in the app.',
+    'Für den Desk in der App braucht dieses NAS UntrashOS 1.1-rc9 oder neuer.',
+  );
+  String downloading(String name) => _('Downloading $name …', 'Lade $name herunter …');
+
+  String get tunnelStarts => _('Tunnel starts', 'Tunnel-Starts');
+  String get tunnelStartsHelp => _(
+    'Newest first. Many starts in a row mean the tunnel is not stable.',
+    'Neueste zuerst. Viele Starts hintereinander heißen: Der Tunnel ist nicht stabil.',
+  );
+
   String get mesh => _('Mesh', 'Mesh');
   String get node => _('Node id', 'Knoten-ID');
   String get address => _('Mesh address', 'Mesh-Adresse');

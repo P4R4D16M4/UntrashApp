@@ -9,7 +9,7 @@ import 'package:untrash_app/protocol/identity.dart';
 import 'package:untrash_app/protocol/mesh.dart';
 
 final untrashOs =
-    Platform.environment['UNTRASHOS_DIR'] ?? '${Platform.environment['HOME']}/Projects/UntrashOS-v1.2/untrashos';
+    Platform.environment['UNTRASHOS_DIR'] ?? '${Platform.environment['HOME']}/Projects/UntrashOS-v1.1/untrashos';
 
 class Nas {
   Nas._(this.p, this.lines, this.hello);
