@@ -2,24 +2,24 @@ package org.untrash.untrash_app
 
 import android.content.Intent
 import io.flutter.embedding.android.FlutterActivity
-import io.flutter.embedding.engine.FlutterEngine
-import io.flutter.plugin.common.MethodChannel
 
+/** Shows the process-wide engine of UntrashApplication. */
 class MainActivity : FlutterActivity() {
-    private var tunnel: MeshTunnel? = null
+    override fun getCachedEngineId() = UntrashApplication.ENGINE
 
-    override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
-        super.configureFlutterEngine(flutterEngine)
-        val t = MeshTunnel(this)
-        tunnel = t
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "org.untrash.app/tunnel").setMethodCallHandler(t)
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "org.untrash.app/download")
-            .setMethodCallHandler(Downloads(this))
+    override fun onResume() {
+        super.onResume()
+        MeshTunnelChannel.activity = this
+    }
+
+    override fun onDestroy() {
+        if (MeshTunnelChannel.activity === this) MeshTunnelChannel.activity = null
+        super.onDestroy()
     }
 
     @Deprecated("Deprecated in Java")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        if (tunnel?.onActivityResult(requestCode, resultCode) != true) {
+        if (!MeshTunnelChannel.onActivityResult(requestCode, resultCode)) {
             super.onActivityResult(requestCode, resultCode, data)
         }
     }

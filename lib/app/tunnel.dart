@@ -86,6 +86,10 @@ abstract class MeshTunnel {
 
   /// The last starts of the tunnel, newest first: "HH:MM:SS reason".
   Future<List<String>> starts();
+
+  /// Calls from the native tunnel watch: [recover] when no NAS answers on
+  /// any endpoint, [networkChanged] after a switch of the real network.
+  void listen({required Future<void> Function() recover, required Future<void> Function() networkChanged});
 }
 
 class AndroidTunnel implements MeshTunnel {
@@ -107,6 +111,20 @@ class AndroidTunnel implements MeshTunnel {
 
   @override
   Future<List<String>> starts() async => (await _ch.invokeListMethod<String>('starts')) ?? const [];
+
+  static const _events = MethodChannel('org.untrash.app/tunnel-events');
+  @override
+  void listen({required Future<void> Function() recover, required Future<void> Function() networkChanged}) {
+    _events.setMethodCallHandler((call) async {
+      switch (call.method) {
+        case 'recover':
+          await recover();
+        case 'networkChanged':
+          await networkChanged();
+      }
+      return null;
+    });
+  }
 }
 
 /// No tunnel: requests go straight to the addresses (development against
@@ -124,6 +142,8 @@ class NoTunnel implements MeshTunnel {
   Future<Map<String, int>> handshakes() async => const {};
   @override
   Future<List<String>> starts() async => const [];
+  @override
+  void listen({required Future<void> Function() recover, required Future<void> Function() networkChanged}) {}
 }
 
 MeshTunnel platformTunnel() => Platform.isAndroid ? AndroidTunnel() : NoTunnel();

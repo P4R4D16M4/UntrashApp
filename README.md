@@ -28,12 +28,18 @@ flutter test
   roster/record rules.
 - `nas_mesh_test.dart`: join, roster/records both ways, gossip and removal
   against a running `untrash-mesh`.
+- `nas_dir_test.dart`: the mesh directory on a Nextcloud (`tool/dir_fixture.py`:
+  untrash-mesh + the reference directory): a NAS that moved is found again
+  through the directory while it cannot be reached itself. With
+  `UT_NC_TEST=1` also against a real Nextcloud 30 with the UntrashOS app
+  (`tool/dir_fixture.py --nextcloud`: Docker, container `ut-nc-app` on port
+  18081, removed afterwards).
 - `nas_desk_test.dart`, `app_model_test.dart`: pairing through the Desk,
   signed requests as the linked user, sign-in without password and with two
   factors, wrong number denies, restart keeps the pairing.
 
 The integration tests need the UntrashOS checkout (default
-`~/Projects/UntrashOS-v1.1/untrashos`, or `UNTRASHOS_DIR`), `python3` and
+`~/Projects/UntrashOS-v1.2/untrashos`, or `UNTRASHOS_DIR`), `python3` and
 `gcc`. Without it they are skipped.
 
 ## Development on the desktop (no tunnel)
@@ -52,5 +58,10 @@ Paste the invitation. The desktop build has no tunnel and no QR scanner.
   push yet: `/v1/app-notify` needs a listener in the background).
 - iOS: the code builds on the same protocol, but the tunnel needs a
   NetworkExtension (WireGuardKit) and a Mac to build. Not done.
-- Not yet: HTTPS with a pinned certificate when the NAS forces HTTPS, file
-  browsing, background notifications.
+- Mesh directory: when no NAS answers, or after a network change, the app
+  asks the cloud members' directories (a Nextcloud, `app-api.md` §3) for
+  fresher NAS records. One Flutter engine for the whole process
+  (`UntrashApplication`), so the native tunnel watch can ask for it while
+  the app is in the background.
+- Not yet: HTTPS with a pinned certificate when the NAS forces HTTPS,
+  background notifications.

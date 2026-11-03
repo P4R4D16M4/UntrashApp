@@ -102,11 +102,22 @@ int _seq(Map<String, Object?>? x) => ((x ?? const {})['seq'] as num?)?.toInt() ?
 
 /// A member as the app sees it.
 class Member {
-  Member(this.node, this.pub, this.wg, this.name, this.role, this.kind, this.address, this.endpoints);
+  Member(this.node, this.pub, this.wg, this.name, this.role, this.kind, this.address, this.endpoints, {this.dir});
   final String node, pub, wg, name, role, kind, address;
   final List<String> endpoints;
-  bool get isNas => kind != 'app';
+
+  /// A cloud member's directory URL (cloud-api.md §2).
+  final String? dir;
+
+  /// Kinds: "nas", "app", "cloud" (a Nextcloud: a directory, no WireGuard
+  /// peer, no Desk).
+  bool get isNas => kind == 'nas';
+  bool get isCloud => kind == 'cloud';
 }
+
+/// As untrash-mesh dir_url_ok().
+bool dirUrlOk(String? url) =>
+    url != null && url.length <= 300 && RegExp(r'^https?://[^\s/?#]+(/[^\s?#]*)?$').hasMatch(url);
 
 /// The app's whole mesh state; JSON-serialisable for storage.
 class MeshState {
@@ -123,6 +134,9 @@ class MeshState {
 
   /// The endpoint the NAS saw us at last ("you" of a sync).
   String? observed;
+
+  /// The public IP a directory saw us at last (informational).
+  String? dirYou;
 
   Map<String, Object?> get members => _members(roster);
   bool isMember(String node) => members.containsKey(node);
@@ -143,6 +157,7 @@ class MeshState {
           (m['kind'] ?? 'nas') as String,
           meshAddress(meshId, pub),
           eps,
+          dir: m['dir'] as String?,
         );
       }(),
   ];
@@ -195,17 +210,21 @@ class MeshState {
     'roster': roster,
     'book': book,
     'observed': observed,
+    'dirYou': dirYou,
   };
 
-  static MeshState fromJson(Map<String, Object?> j) => MeshState(
-    meshId: j['mesh'] as String,
-    meshName: (j['name'] ?? '') as String,
-    roster: (j['roster'] as Map).cast<String, Object?>(),
-    book: {
-      for (final e in ((j['book'] as Map?) ?? const {}).entries)
-        e.key as String: (e.value as Map).cast<String, Object?>(),
-    },
-  )..observed = j['observed'] as String?;
+  static MeshState fromJson(Map<String, Object?> j) =>
+      MeshState(
+          meshId: j['mesh'] as String,
+          meshName: (j['name'] ?? '') as String,
+          roster: (j['roster'] as Map).cast<String, Object?>(),
+          book: {
+            for (final e in ((j['book'] as Map?) ?? const {}).entries)
+              e.key as String: (e.value as Map).cast<String, Object?>(),
+          },
+        )
+        ..observed = j['observed'] as String?
+        ..dirYou = j['dirYou'] as String?;
 }
 
 /// Where the HTTP requests of the mesh go. Tests map mesh addresses to
@@ -332,6 +351,46 @@ Future<List<Map<String, Object?>>?> syncWith(
     if (r.statusCode != 200) return null;
     final ans = (jsonDecode(utf8.decode(r.bodyBytes)) as Map).cast<String, Object?>();
     if (ans['you'] is String) st.observed = ans['you'] as String;
+    return await st.merge((ans['items'] as List?) ?? const []);
+  } catch (_) {
+    return null;
+  }
+}
+
+/// One sync with a cloud member's directory over plain HTTPS (cloud-api.md
+/// §2): no WireGuard address vouches for us there, so the request is signed
+/// with the app's node key. The answer is merged with the same rules as a
+/// NAS's (the directory never makes records, it cannot redirect anyone).
+/// Returns the new items, or null when the directory refused or was not
+/// reachable.
+Future<List<Map<String, Object?>>?> dirSync(
+  MeshState st,
+  Identity me,
+  Member cloud,
+  List<Map<String, Object?>> items,
+  MeshTransport t, {
+  Duration timeout = const Duration(seconds: 15),
+  DateTime? now,
+}) async {
+  if (!cloud.isCloud || !dirUrlOk(cloud.dir)) return null;
+  final req = <String, Object?>{
+    'items': [st.roster, ...items],
+    'have': {for (final e in st.book.entries) e.key: _seq(e.value)},
+    'roster': _seq(st.roster),
+    'from': me.nodeId,
+    'ts': (now ?? DateTime.now()).millisecondsSinceEpoch ~/ 1000,
+    'nonce': hexOf(randomBytes(16)),
+  };
+  await me.signObject(req);
+  final base = cloud.dir!.endsWith('/') ? cloud.dir!.substring(0, cloud.dir!.length - 1) : cloud.dir!;
+  try {
+    final r = await t.client
+        .post(Uri.parse('$base/v1/sync'), headers: {'Content-Type': 'application/json'}, body: jsonEncode(req))
+        .timeout(timeout);
+    if (r.statusCode != 200) return null;
+    final ans = jsonDecode(utf8.decode(r.bodyBytes));
+    if (ans is! Map) return null;
+    if (ans['you'] is String) st.dirYou = ans['you'] as String;
     return await st.merge((ans['items'] as List?) ?? const []);
   } catch (_) {
     return null;

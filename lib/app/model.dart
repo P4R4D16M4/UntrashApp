@@ -38,7 +38,11 @@ class AppModel extends ChangeNotifier {
   AppModel({KeyStore? store, MeshTunnel? tunnel, MeshTransport? transport, this.deskPort = 80})
     : store = store ?? SecureKeyStore(),
       tunnel = tunnel ?? platformTunnel(),
-      transport = transport ?? MeshTransport();
+      transport = transport ?? MeshTransport() {
+    // the native tunnel watch calls these also while the app is in the
+    // background (one engine for the whole process)
+    this.tunnel.listen(recover: () => recoverViaDirectory(), networkChanged: () => recoverViaDirectory());
+  }
 
   final KeyStore store;
   final MeshTunnel tunnel;
@@ -160,7 +164,10 @@ class AppModel extends ChangeNotifier {
         await tunnel.up(tunnelConfig(me!, ownAddress!, peers), {for (final p in peers) p.wg: p.endpoints});
         // the native side tries each endpoint for 8 s; wait for a first handshake
         final maxEps = peers.fold<int>(1, (a, p) => p.endpoints.length > a ? p.endpoints.length : a);
-        await _handshake(peers, seconds: 8 * maxEps + 4);
+        if (!await _handshake(peers, seconds: 8 * maxEps + 4) && await recoverViaDirectory()) {
+          // a NAS moved: the directory had its new address (up() already ran)
+          await _handshake(await tunnelPeers(mesh!, me!), seconds: 8 * maxEps + 4);
+        }
       } catch (e) {
         lastError = '$e';
       }
@@ -212,7 +219,49 @@ class AppModel extends ChangeNotifier {
       conn = Conn.off;
       stop();
     }
-    if (reached == 0 && nas.isNotEmpty) lastError ??= 'No NAS reachable over UntrashMesh.';
+    if (reached == 0 && nas.isNotEmpty) {
+      lastError ??= 'No NAS reachable over UntrashMesh.';
+      await recoverViaDirectory();
+    }
+  }
+
+  // ------------------------------------------------------------ mesh directory (cloud-api.md §2)
+
+  bool _recovering = false;
+
+  /// Asks every cloud member's directory (a Nextcloud) over plain HTTPS: our
+  /// own record goes there (so the NAS find the phone), fresher NAS records
+  /// come back, signed by the NAS themselves. When a NAS's endpoints changed,
+  /// the tunnel gets them at once. True when the tunnel got new endpoints.
+  Future<bool> recoverViaDirectory() async {
+    if (!paired || _recovering) return false;
+    final clouds = mesh!.memberList().where((m) => m.isCloud && dirUrlOk(m.dir)).toList();
+    if (clouds.isEmpty) return false;
+    _recovering = true;
+    try {
+      String key(List<TunnelPeer> ps) => jsonEncode({for (final p in ps) p.wg: p.endpoints});
+      final before = key(await tunnelPeers(mesh!, me!));
+      if (_seq == 0) _seq = 1;
+      final eps = mesh!.observed == null ? <String>[] : [mesh!.observed!];
+      final rec = await ownRecord(me!, name, eps, _seq);
+      var any = false;
+      for (final c in clouds) {
+        if (await dirSync(mesh!, me!, c, [rec], transport) != null) any = true;
+      }
+      if (!any) return false;
+      _syncNasViews();
+      await _save();
+      notifyListeners();
+      final peers = await tunnelPeers(mesh!, me!);
+      if (key(peers) == before || !tunnel.available || ownAddress == null) return false;
+      await tunnel.up(tunnelConfig(me!, ownAddress!, peers), {for (final p in peers) p.wg: p.endpoints});
+      return true;
+    } catch (e) {
+      lastError = '$e';
+      return false;
+    } finally {
+      _recovering = false;
+    }
   }
 
   DeskApi deskFor(NasView v) => DeskApi(deskBase(v.member, transport, port: deskPort), me!, client: transport.client);

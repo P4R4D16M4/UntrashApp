@@ -6,6 +6,8 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
+import android.os.Handler
+import android.os.Looper
 import com.wireguard.android.backend.GoBackend
 import com.wireguard.android.backend.Tunnel
 import com.wireguard.config.Config
@@ -40,6 +42,7 @@ object MeshVpn {
     private const val STALE_MS = 200_000L
     private const val SLOW_MS = 60_000L
     private const val MIN_GAP_MS = 20_000L
+    private const val DIR_EVERY_MS = 300_000L
 
     private object Mesh : Tunnel {
         override fun getName() = "untrash-mesh"
@@ -54,6 +57,25 @@ object MeshVpn {
     private val tries = HashMap<String, Int>()
     private var appliedAt = 0L
     private var watch: ScheduledFuture<*>? = null
+    private var askedDirAt = 0L
+
+    /**
+     * Calls into Dart on the process-wide engine: "recover" (no NAS answers
+     * on any endpoint: ask the mesh directories where they are now) and
+     * "networkChanged" (tell the directories where we are). The engine runs
+     * as long as the process, also without an activity.
+     */
+    var events: MethodChannel? = null
+
+    private fun tellDart(method: String) {
+        val ch = events ?: return
+        Handler(Looper.getMainLooper()).post {
+            try {
+                ch.invokeMethod(method, null)
+            } catch (_: Exception) {
+            }
+        }
+    }
     private var pendingNet: ScheduledFuture<*>? = null
 
     @Synchronized
@@ -115,6 +137,7 @@ object MeshVpn {
             apply("network changed")
         } catch (_: Exception) {
         }
+        tellDart("networkChanged")
     }
 
     @Synchronized
@@ -202,9 +225,24 @@ object MeshVpn {
             return
         }
         val movable = endpoints.filter { it.value.size > 1 }
-        if (movable.isEmpty()) return
+        if (movable.isEmpty()) {
+            // nothing to rotate: only the directories can help
+            if (now - appliedAt > SETTLE_MS && now - askedDirAt > DIR_EVERY_MS) {
+                askedDirAt = now
+                tellDart("recover")
+            }
+            return
+        }
         val n = tries.values.maxOrNull() ?: 0
-        val wait = if (n >= 2 * movable.values.maxOf { it.size }) SLOW_MS else SETTLE_MS
+        val slow = n >= 2 * movable.values.maxOf { it.size }
+        // two rounds without luck: the NAS may have a new address; the mesh
+        // directories (a Nextcloud) know it (Dart asks them, then calls up()
+        // with the fresher endpoints). At most every 5 minutes.
+        if (slow && now - askedDirAt > DIR_EVERY_MS) {
+            askedDirAt = now
+            tellDart("recover")
+        }
+        val wait = if (slow) SLOW_MS else SETTLE_MS
         if (now - appliedAt < maxOf(wait, MIN_GAP_MS)) return
         for (key in movable.keys) {
             index[key] = (index[key] ?: 0) + 1
@@ -217,24 +255,37 @@ object MeshVpn {
     }
 }
 
-/** The Flutter side of the tunnel: permission (needs the activity), up, down, handshakes. */
-class MeshTunnel(private val activity: Activity) : MethodChannel.MethodCallHandler {
+/**
+ * The Flutter side of the tunnel, registered once on the process-wide
+ * engine (UntrashApplication): up, down, handshakes, starts work without an
+ * activity; only asking for the VPN permission needs one.
+ */
+object MeshTunnelChannel : MethodChannel.MethodCallHandler {
     private val worker = Executors.newSingleThreadExecutor()
+    private val main = Handler(Looper.getMainLooper())
     private var pending: MethodChannel.Result? = null
+    private lateinit var app: Context
 
-    init {
-        MeshVpn.init(activity)
+    /** The activity in front, for the permission dialog; null in the background. */
+    var activity: Activity? = null
+
+    fun init(ctx: Context) {
+        app = ctx.applicationContext
+        MeshVpn.init(app)
     }
 
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
             "prepare" -> {
-                val intent = GoBackend.VpnService.prepare(activity)
-                if (intent == null) {
-                    result.success(true)
-                } else {
-                    pending = result
-                    activity.startActivityForResult(intent, REQUEST_VPN)
+                val intent = GoBackend.VpnService.prepare(app)
+                val a = activity
+                when {
+                    intent == null -> result.success(true)
+                    a == null -> result.success(false)        // in the background: the user decides when the app is open
+                    else -> {
+                        pending = result
+                        a.startActivityForResult(intent, REQUEST_VPN)
+                    }
                 }
             }
             "up" -> run(result) {
@@ -253,14 +304,14 @@ class MeshTunnel(private val activity: Activity) : MethodChannel.MethodCallHandl
         }
     }
 
-    /** Backend calls block; they run off the UI thread, answers go back on it. */
+    /** Backend calls block; they run off the main thread, answers go back on it. */
     private fun run(result: MethodChannel.Result, body: () -> Any?) {
         worker.execute {
             try {
                 val v = body()
-                activity.runOnUiThread { result.success(v) }
+                main.post { result.success(v) }
             } catch (e: Exception) {
-                activity.runOnUiThread { result.error("tunnel", e.message ?: e.toString(), null) }
+                main.post { result.error("tunnel", e.message ?: e.toString(), null) }
             }
         }
     }
@@ -272,7 +323,5 @@ class MeshTunnel(private val activity: Activity) : MethodChannel.MethodCallHandl
         return true
     }
 
-    companion object {
-        const val REQUEST_VPN = 7340
-    }
+    const val REQUEST_VPN = 7340
 }

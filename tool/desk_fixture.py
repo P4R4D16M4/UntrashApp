@@ -30,7 +30,7 @@ import time
 import types
 
 OS = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else
-                     os.path.expanduser("~/Projects/UntrashOS-v1.1/untrashos"))
+                     os.path.expanduser("~/Projects/UntrashOS-v1.2/untrashos"))
 TESTS = os.path.join(OS, "image/tests")
 LIB = os.path.join(OS, "image/rootfs/usr/lib/untrash")
 

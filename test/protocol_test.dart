@@ -11,7 +11,7 @@ import 'package:untrash_app/protocol/mesh.dart';
 import 'package:untrash_app/protocol/mesh_address.dart';
 
 final untrashOs =
-    Platform.environment['UNTRASHOS_DIR'] ?? '${Platform.environment['HOME']}/Projects/UntrashOS-v1.1/untrashos';
+    Platform.environment['UNTRASHOS_DIR'] ?? '${Platform.environment['HOME']}/Projects/UntrashOS-v1.2/untrashos';
 final meshTool = '$untrashOs/image/rootfs/usr/lib/untrash/untrash-mesh';
 
 /// Runs Python with JSON on stdin; returns its stdout trimmed.

@@ -1,6 +1,5 @@
 package org.untrash.untrash_app
 
-import android.app.Activity
 import android.app.DownloadManager
 import android.content.Context
 import android.net.Uri
@@ -16,7 +15,7 @@ import io.flutter.plugin.common.MethodChannel
  * which a web view cannot save by itself). The NAS's mesh address is routed
  * through the tunnel for every app, the DownloadManager included.
  */
-class Downloads(private val activity: Activity) : MethodChannel.MethodCallHandler {
+class Downloads(private val context: Context) : MethodChannel.MethodCallHandler {
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         if (call.method != "download") return result.notImplemented()
         try {
@@ -29,7 +28,7 @@ class Downloads(private val activity: Activity) : MethodChannel.MethodCallHandle
                 .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, name)
             CookieManager.getInstance().getCookie(url)?.let { req.addRequestHeader("Cookie", it) }
             call.argument<String>("agent")?.let { req.addRequestHeader("User-Agent", it) }
-            val dm = activity.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+            val dm = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
             result.success(dm.enqueue(req))
         } catch (e: Exception) {
             result.error("download", e.message ?: e.toString(), null)

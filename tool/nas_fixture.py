@@ -28,7 +28,7 @@ import tempfile
 import time
 
 OS = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else
-                     os.path.expanduser("~/Projects/UntrashOS-v1.1/untrashos"))
+                     os.path.expanduser("~/Projects/UntrashOS-v1.2/untrashos"))
 TOOL = os.path.join(OS, "image/rootfs/usr/lib/untrash/untrash-mesh")
 
 
