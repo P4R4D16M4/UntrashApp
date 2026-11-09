@@ -1,6 +1,8 @@
 // The whole Desk of a NAS in a web view, over the mesh (app-api.md §5,
 // "The Desk in the app"): a one-time link signs the view in; downloads go
-// to Android's DownloadManager, uploads use the system file picker.
+// to Android's DownloadManager, uploads use the system file picker.  The
+// user agent marks the app, so the Desk shows its phone view with its own
+// top bar and back stack; the view has no app bar of its own.
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
@@ -18,6 +20,9 @@ bool get canShowDesk => Platform.isAndroid || Platform.isIOS;
 
 const _downloads = MethodChannel('org.untrash.app/download');
 
+/// Added to the web view's user agent; the Desk starts its phone view on it.
+const deskAgentMark = 'UntrashApp/1';
+
 class DeskScreen extends StatefulWidget {
   const DeskScreen({super.key, required this.model, required this.nas});
   final AppModel model;
@@ -30,6 +35,7 @@ class _DeskScreenState extends State<DeskScreen> {
   WebViewController? _web;
   String? _error;
   int _progress = 0;
+  DateTime? _signedIn;
 
   @override
   void initState() {
@@ -56,6 +62,7 @@ class _DeskScreenState extends State<DeskScreen> {
     final c = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(Ut.bg0)
+      ..addJavaScriptChannel('UntrashApp', onMessageReceived: (m) => _fromDesk(m.message))
       ..setNavigationDelegate(
         NavigationDelegate(
           onProgress: (p) => mounted ? setState(() => _progress = p) : null,
@@ -79,8 +86,23 @@ class _DeskScreenState extends State<DeskScreen> {
       await p.setMediaPlaybackRequiresUserGesture(false);
       await p.setOnShowFileSelector(_pickFiles);
     }
+    final agent = await c.getUserAgent();
+    await c.setUserAgent('${agent ?? ''} $deskAgentMark'.trim());
+    _signedIn = DateTime.now();
     await c.loadRequest(link);
     if (mounted) setState(() => _web = c);
+  }
+
+  // messages of the Desk (app-api.md §5): its session ran out, or the user
+  // signed out
+  void _fromDesk(String m) {
+    if (!mounted) return;
+    if (m == 'close') {
+      Navigator.of(context).maybePop();
+    } else if (m == 'signin') {
+      final last = _signedIn;
+      if (last == null || DateTime.now().difference(last) > const Duration(seconds: 30)) _open();
+    }
   }
 
   Future<List<String>> _pickFiles(FileSelectorParams params) async {
@@ -120,16 +142,8 @@ class _DeskScreenState extends State<DeskScreen> {
       },
       child: Scaffold(
         backgroundColor: Ut.bg0,
-        appBar: AppBar(
-          title: Text(widget.nas.title),
-          actions: [IconButton(tooltip: t.reload, icon: const Icon(Icons.refresh), onPressed: _open)],
-          bottom: _progress > 0 && _progress < 100
-              ? PreferredSize(
-                  preferredSize: const Size.fromHeight(2),
-                  child: LinearProgressIndicator(value: _progress / 100, minHeight: 2, color: Ut.teal),
-                )
-              : null,
-        ),
+        // the Desk has its own top bar; an app bar only while it is not there
+        appBar: web == null ? AppBar(title: Text(widget.nas.title)) : null,
         body: _error != null
             ? Padding(
                 padding: const EdgeInsets.all(24),
@@ -146,7 +160,15 @@ class _DeskScreenState extends State<DeskScreen> {
               )
             : web == null
             ? const Center(child: CircularProgressIndicator())
-            : SafeArea(top: false, child: WebViewWidget(controller: web)),
+            : SafeArea(
+                child: Stack(
+                  children: [
+                    WebViewWidget(controller: web),
+                    if (_progress > 0 && _progress < 100)
+                      LinearProgressIndicator(value: _progress / 100, minHeight: 2, color: Ut.teal),
+                  ],
+                ),
+              ),
       ),
     );
   }
